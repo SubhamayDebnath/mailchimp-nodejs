@@ -122,7 +122,7 @@ app.post('/api/filter-subscribers', async (req, res) => {
     const response = await mailchimp.lists.getListMembersInfo(process.env.MAILCHIMP_LIST_ID);
 
     // Filter subscribers based on the target book
-    const subscribers = response.members.filter((member) => member.status === "subscribed" && member.merge_fields.BOOKS !== "").filter((member) => {
+    const subscribers = response.members.filter((member) => member.status === "subscribed" && member.merge_fields.BOOKS === "").filter((member) => {
       // Split the books string into an array
       const books = member.merge_fields.BOOKS.split(",");
       const pattern = new RegExp(`\\b${targetBook}\\b`, "i");
@@ -130,7 +130,7 @@ app.post('/api/filter-subscribers', async (req, res) => {
       const hasAnyBook = books.some(book => {
         return pattern.test(book);
       });
-      return hasAnyBook;
+      return !hasAnyBook;
     }).map((member) => ({
       email: member.email_address,
       firstName: member.merge_fields.FNAME,
