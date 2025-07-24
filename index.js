@@ -56,6 +56,7 @@ app.post("/api/add-subscriber",async(req,res)=>{
     }
 })
 
+// get subscribers
 app.get("/api/get-subscribers",async(req,res)=>{
     try {
         const response = await mailchimp.lists.getListMembersInfo(process.env.MAILCHIMP_LIST_ID);
