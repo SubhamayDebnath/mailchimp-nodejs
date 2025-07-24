@@ -35,19 +35,20 @@ app.get("/", async (req, res) => {
 // add subscriber 
 app.post("/api/add-subscriber", async (req, res) => {
   try {
-    const { email, first_name, last_name, books } = req.body;
+    const { email, first_name, last_name, books } = req.body; // ex: books = ['abol','leo'] 
     if (!email || !isValidEmail(email)) {
       return res.status(400).json({ error: "Invalid email" });
     }
     const firstName = first_name || '';
     const lastName = last_name || '';
+    const bookList = Array.isArray(books) ? books.join(",") : '';
     const response = await mailchimp.lists.addListMember(mailchimpListId, {
       email_address: email,
       status: "subscribed",
       merge_fields: {
         FNAME: firstName,
         LNAME: lastName,
-        BOOKS: books
+        BOOKS: bookList
       }
     });
     res.status(200).json({ message: "Subscriber Added Successfully", response: response });
@@ -80,20 +81,23 @@ app.get("/api/get-subscribers", async (req, res) => {
 
 app.patch("/api/update-books", async (req, res) => {
   try {
-    const { email, newBooks } = req.body;
+    const { email, newBooks } = req.body; //ex:  newBook=['abol','leo']
     if (!email || !isValidEmail(email)) {
       return res.status(400).json({ error: "Invalid email" });
     }
     if (!Array.isArray(newBooks) || newBooks.length === 0) {
       return res.status(400).json({ error: "New Books must be a non-empty array" });
     }
-    const subscriber = await mailchimp.lists.getListMember(mailchimpListId,email);
     // get previous books
+    const subscriber = await mailchimp.lists.getListMember(mailchimpListId,email);
     const subscriberPreviousBooks = subscriber.merge_fields.BOOKS;
+    // split previous books
     const previousBooks = subscriberPreviousBooks
       ? subscriberPreviousBooks.split(",").map(b => b.trim())
       : [];
+    // combine previous books and new books
     const combinedBooks = [...previousBooks, ...newBooks.map(b => b.trim())];
+    // remove duplicates
     const uniqueBooks = [...new Set(combinedBooks)];
     const normalizedNewBooks = uniqueBooks.join(",");
     const response = await mailchimp.lists.updateListMember(mailchimpListId, email, {
@@ -101,11 +105,7 @@ app.patch("/api/update-books", async (req, res) => {
         BOOKS: normalizedNewBooks
       }
     });
-    if (response.status === "subscribed") {
-      res.status(200).json({ message: "Subscriber Updated Successfully", response: response });
-    } else {
-      res.status(404).json({ error: "Subscriber not found" });
-    }
+    return res.status(200).json({message: "Books updated", response: response});
   } catch (error) {
     console.error("Update subscriber error:", error.message);
     res.status(500).json({ error: error.message })
@@ -115,7 +115,7 @@ app.patch("/api/update-books", async (req, res) => {
 // filter subscribers based on books
 app.post('/api/filter-subscribers', async (req, res) => {
   try {
-    const { targetBook } = req.body;
+    const { targetBook } = req.body; // for single book
     if (!targetBook) {
       return res.status(400).json({ error: "Please provide a book name" });
     }
