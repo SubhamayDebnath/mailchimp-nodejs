@@ -1,6 +1,6 @@
 import { config } from "dotenv";
 config();
-import express from "express";
+import express, { json } from "express";
 import mailchimp from "@mailchimp/mailchimp_marketing";
 
 
@@ -13,6 +13,8 @@ mailchimp.setConfig({
   apiKey: process.env.MAILCHIMP_API_KEY,
   server: process.env.MAILCHIMP_SERVER_PREFIX,
 });
+
+const mailchimpListId = process.env.MAILCHIMP_LIST_ID;
 
 // check email
 const isValidEmail = (email) => {
@@ -39,7 +41,7 @@ app.post("/api/add-subscriber", async (req, res) => {
     }
     const firstName = first_name || '';
     const lastName = last_name || '';
-    const response = await mailchimp.lists.addListMember(process.env.MAILCHIMP_LIST_ID, {
+    const response = await mailchimp.lists.addListMember(mailchimpListId, {
       email_address: email,
       status: "subscribed",
       merge_fields: {
@@ -51,7 +53,7 @@ app.post("/api/add-subscriber", async (req, res) => {
     res.status(200).json({ message: "Subscriber Added Successfully", response: response });
 
   } catch (error) {
-    console.log(error);
+    console.error("Add subscriber error:", error.message);
     res.status(500).json({ error: error.message })
   }
 })
@@ -59,7 +61,7 @@ app.post("/api/add-subscriber", async (req, res) => {
 // get subscribers
 app.get("/api/get-subscribers", async (req, res) => {
   try {
-    const response = await mailchimp.lists.getListMembersInfo(process.env.MAILCHIMP_LIST_ID);
+    const response = await mailchimp.lists.getListMembersInfo(mailchimpListId);
     const subscribers = response.members.map((member) => ({
       email: member.email_address,
       status: member.status,
@@ -69,7 +71,43 @@ app.get("/api/get-subscribers", async (req, res) => {
     }));
     res.status(200).json({ message: "Subscriber Fetched Successfully", response: subscribers });
   } catch (error) {
-    console.log(error);
+    console.error("Get subscriber error:", error.message);
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// update books
+
+app.patch("/api/update-books", async (req, res) => {
+  try {
+    const { email, newBooks } = req.body;
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({ error: "Invalid email" });
+    }
+    if (!Array.isArray(newBooks) || newBooks.length === 0) {
+      return res.status(400).json({ error: "New Books must be a non-empty array" });
+    }
+    const subscriber = await mailchimp.lists.getListMember(mailchimpListId,email);
+    // get previous books
+    const subscriberPreviousBooks = subscriber.merge_fields.BOOKS;
+    const previousBooks = subscriberPreviousBooks
+      ? subscriberPreviousBooks.split(",").map(b => b.trim())
+      : [];
+    const combinedBooks = [...previousBooks, ...newBooks.map(b => b.trim())];
+    const uniqueBooks = [...new Set(combinedBooks)];
+    const normalizedNewBooks = uniqueBooks.join(",");
+    const response = await mailchimp.lists.updateListMember(mailchimpListId, email, {
+      merge_fields: {
+        BOOKS: normalizedNewBooks
+      }
+    });
+    if (response.status === "subscribed") {
+      res.status(200).json({ message: "Subscriber Updated Successfully", response: response });
+    } else {
+      res.status(404).json({ error: "Subscriber not found" });
+    }
+  } catch (error) {
+    console.error("Update subscriber error:", error.message);
     res.status(500).json({ error: error.message })
   }
 })
@@ -84,7 +122,6 @@ app.post('/api/filter-subscribers', async (req, res) => {
     const response = await mailchimp.lists.getListMembersInfo(process.env.MAILCHIMP_LIST_ID);
 
     // Filter subscribers based on the target book
-
     const subscribers = response.members.filter((member) => member.status === "subscribed" && member.merge_fields.BOOKS !== "").filter((member) => {
       // Split the books string into an array
       const books = member.merge_fields.BOOKS.split(",");
@@ -102,7 +139,7 @@ app.post('/api/filter-subscribers', async (req, res) => {
 
     res.status(200).json({ message: "Filtered Subscribers Fetched Successfully", response: subscribers });
   } catch (error) {
-    console.log(error);
+    console.error("Filter subscriber error:", error.message);
     res.status(500).json({ error: error.message })
   }
 })
