@@ -59,16 +59,14 @@ app.post("/api/add-subscriber",async(req,res)=>{
 app.get("/api/get-subscribers",async(req,res)=>{
     try {
         const response = await mailchimp.lists.getListMembersInfo(process.env.MAILCHIMP_LIST_ID);
-        response.members.forEach((member) => {
-            console.log({
-              email: member.email_address,
-              status: member.status,
-              firstName: member.merge_fields.FNAME,
-              lastName: member.merge_fields.LNAME,
-              books: member.merge_fields.BOOKS, // Your custom field
-            });
-        });
-        res.status(200).json({message:"Subscriber Fetched Successfully",response:response});
+        const subscribers = response.members.map((member) => ({
+            email: member.email_address,
+            status: member.status,
+            firstName: member.merge_fields.FNAME,
+            lastName: member.merge_fields.LNAME,
+            books: member.merge_fields.BOOKS,
+          }));
+        res.status(200).json({message:"Subscriber Fetched Successfully",response:subscribers});
     } catch (error) {
         console.log(error);
         res.status(500).json({error:error.message})
