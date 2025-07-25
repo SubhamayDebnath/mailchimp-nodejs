@@ -1,5 +1,8 @@
 import mailchimp from "@mailchimp/mailchimp_marketing";
-import { isValidEmail } from "../utils/emailValidator.js";
+import { config } from "dotenv";
+config();
+import { isValidEmail, matchBook } from "../utils/utils.js";
+
 // Configure Mailchimp
 mailchimp.setConfig({
     apiKey: process.env.MAILCHIMP_API_KEY,
@@ -28,7 +31,7 @@ export const getSubscribers = async (req, res) => {
             status: member.status,
             firstName: member.merge_fields.FNAME,
             lastName: member.merge_fields.LNAME,
-            books: member.merge_fields.BOOKS,
+            books: member.tags,
         }));
         res.status(200).json({ message: "Subscriber Fetched Successfully", response: subscribers });
     } catch (error) {
@@ -40,22 +43,28 @@ export const getSubscribers = async (req, res) => {
 // add subscribers
 export const addSubscriber = async (req, res) => {
     try {
-        const { email, first_name, last_name, books } = req.body; // ex: books = ['abol','leo'] 
+        const { email, first_name, last_name, books } = req.body; // ex: books = ['EEDP','LEO'] 
         if (!email || !isValidEmail(email)) {
             return res.status(400).json({ error: "Invalid email" });
         }
         const firstName = first_name || '';
         const lastName = last_name || '';
-        const bookList = Array.isArray(books) ? books.join(",") : '';
         const response = await mailchimp.lists.addListMember(mailchimpListId, {
             email_address: email,
             status: "subscribed",
             merge_fields: {
                 FNAME: firstName,
                 LNAME: lastName,
-                BOOKS: bookList
             }
         });
+
+        // add books if books array is not empty
+        if (books.length > 0) {
+            await mailchimp.lists.updateListMemberTags(mailchimpListId, email, {
+                tags: books.map(name => ({ name, status: "active" }))
+            })
+        }
+
         res.status(200).json({ message: "Subscriber Added Successfully", response: response });
 
     } catch (error) {
@@ -67,31 +76,48 @@ export const addSubscriber = async (req, res) => {
 // update books
 export const updateBooks = async (req, res) => {
     try {
-        const { email, newBooks } = req.body; //ex:  newBook=['abol','leo']
+        const { email, newBooks } = req.body; //ex:  newBook=['EEDP','LEO']
         if (!email || !isValidEmail(email)) {
             return res.status(400).json({ error: "Invalid email" });
         }
+        // for array
         if (!Array.isArray(newBooks) || newBooks.length === 0) {
             return res.status(400).json({ error: "New Books must be a non-empty array" });
         }
-        // get previous books
-        const subscriber = await mailchimp.lists.getListMember(mailchimpListId, email);
-        const subscriberPreviousBooks = subscriber.merge_fields.BOOKS;
-        // split previous books
-        const previousBooks = subscriberPreviousBooks
-            ? subscriberPreviousBooks.split(",").map(b => b.trim())
-            : [];
-        // combine previous books and new books
-        const combinedBooks = [...previousBooks, ...newBooks.map(b => b.trim())];
-        // remove duplicates
-        const uniqueBooks = [...new Set(combinedBooks)];
-        const normalizedNewBooks = uniqueBooks.join(",");
-        const response = await mailchimp.lists.updateListMember(mailchimpListId, email, {
-            merge_fields: {
-                BOOKS: normalizedNewBooks
-            }
-        });
-        return res.status(200).json({ message: "Books updated", response: response });
+
+        //for string
+        /* 
+        if(typeof newBooks === 'string' && !newBooks){
+            return res.status(400).json({ error: "New Books must be a non-empty string" });
+        }
+        */
+
+        // optional if existing subscriber 
+        const existingSubscriber = await mailchimp.lists.getListMember(mailchimpListId, email);
+        if (!existingSubscriber) {
+            return res.status(404).json({ error: "Subscriber not found" });
+        }
+        // get book previous tags
+        const getBookTags = await mailchimp.lists.getListMemberTags(mailchimpListId, email);
+        const bookTagList = getBookTags.tags.map(tag => tag.name);
+
+        // for array  of books (currently in use)
+        const updatedBookTagsList = [...new Set([...bookTagList, ...newBooks.map(name => name.trim())])];
+
+        // for single book (uncomment below for single book)
+        /**
+         
+        bookTagList.push("newBook");
+        const updatedBookTagsList = [...new Set(bookTagList)]; 
+        
+        **/
+
+        // update book tags
+        await mailchimp.lists.updateListMemberTags(mailchimpListId, email, {
+            tags: updatedBookTagsList.map(name => ({ name, status: "active" }))
+        })
+
+        return res.status(200).json({ message: "Books updated successfully" });
     } catch (error) {
         console.error("Update subscriber error:", error.message);
         res.status(500).json({ error: error.message })
@@ -105,24 +131,24 @@ export const filterSubscribers = async (req, res) => {
         if (!targetBook) {
             return res.status(400).json({ error: "Please provide a book name" });
         }
-        const response = await mailchimp.lists.getListMembersInfo(process.env.MAILCHIMP_LIST_ID);
+        // get all Subscribers
+        const subscriberData = await mailchimp.lists.getListMembersInfo(process.env.MAILCHIMP_LIST_ID);
 
         // Filter subscribers based on the target book
-        const subscribers = response.members.filter((member) => member.status === "subscribed" && member.merge_fields.BOOKS === "").filter((member) => {
-            // Split the books string into an array
-            const books = member.merge_fields.BOOKS.split(",");
-            const pattern = new RegExp(`\\b${targetBook}\\b`, "i");
-            // Check if any book matches the pattern
-            const hasAnyBook = books.some(book => {
-                return pattern.test(book);
-            });
-            return !hasAnyBook;
-        }).map((member) => ({
-            email: member.email_address,
-            firstName: member.merge_fields.FNAME,
-            lastName: member.merge_fields.LNAME
-        }))
-
+        const subscribers = subscriberData.members
+            .filter((member) => member.status === "subscribed" && member.tags_count > 0)
+            .filter((member) => {
+                const tagsList = member.tags.map((tag) => tag.name);
+                if (tagsList.length === 0) return true;
+                return !tagsList.some((tag) => {
+                    return matchBook(tag.name, targetBook);
+                })
+            })
+            .map((member) => ({
+                email: member.email_address,
+                firstName: member.merge_fields.FNAME,
+                lastName: member.merge_fields.LNAME
+            }))
         res.status(200).json({ message: "Filtered Subscribers Fetched Successfully", response: subscribers });
     } catch (error) {
         console.error("Filter subscriber error:", error.message);
