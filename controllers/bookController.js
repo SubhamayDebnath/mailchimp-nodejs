@@ -2,19 +2,12 @@ import mailchimp from "@mailchimp/mailchimp_marketing";
 import { config } from "dotenv";
 config();
 import { isValidEmail, matchBook } from "../utils/utils.js";
-
-// Configure Mailchimp
-mailchimp.setConfig({
-    apiKey: process.env.MAILCHIMP_API_KEY,
-    server: process.env.MAILCHIMP_SERVER_PREFIX,
-});
-
-const mailchimpListId = process.env.MAILCHIMP_LIST_ID;
+import { mailchimpClient ,mailchimpListId } from "../config/mailchimpConfig.js"
 
 // get ping
 export const getPing = async (req, res) => {
     try {
-        const response = await mailchimp.ping.get();
+        const response = await mailchimpClient.ping.get();
         res.json({ message: response });
     } catch (error) {
         console.error("Ping error:", error);
@@ -25,7 +18,7 @@ export const getPing = async (req, res) => {
 // get subscribers
 export const getSubscribers = async (req, res) => {
     try {
-        const response = await mailchimp.lists.getListMembersInfo(mailchimpListId);
+        const response = await mailchimpClient.lists.getListMembersInfo(mailchimpListId);
         const subscribers = response.members.map((member) => ({
             email: member.email_address,
             status: member.status,
@@ -49,7 +42,7 @@ export const addSubscriber = async (req, res) => {
         }
         const firstName = first_name || '';
         const lastName = last_name || '';
-        const response = await mailchimp.lists.addListMember(mailchimpListId, {
+        const response = await mailchimpClient.lists.addListMember(mailchimpListId, {
             email_address: email,
             status: "subscribed",
             merge_fields: {
@@ -60,7 +53,7 @@ export const addSubscriber = async (req, res) => {
 
         // add books if books array is not empty
         if (books.length > 0) {
-            await mailchimp.lists.updateListMemberTags(mailchimpListId, email, {
+            await mailchimpClient.lists.updateListMemberTags(mailchimpListId, email, {
                 tags: books.map(name => ({ name, status: "active" }))
             })
         }
@@ -93,12 +86,12 @@ export const updateBooks = async (req, res) => {
         */
 
         // optional if existing subscriber 
-        const existingSubscriber = await mailchimp.lists.getListMember(mailchimpListId, email);
+        const existingSubscriber = await mailchimpClient.lists.getListMember(mailchimpListId, email);
         if (!existingSubscriber) {
             return res.status(404).json({ error: "Subscriber not found" });
         }
         // get book previous tags
-        const getBookTags = await mailchimp.lists.getListMemberTags(mailchimpListId, email);
+        const getBookTags = await mailchimpClient.lists.getListMemberTags(mailchimpListId, email);
         const bookTagList = getBookTags.tags.map(tag => tag.name);
 
         // for array  of books (currently in use)
@@ -113,7 +106,7 @@ export const updateBooks = async (req, res) => {
         **/
 
         // update book tags
-        await mailchimp.lists.updateListMemberTags(mailchimpListId, email, {
+        await mailchimpClient.lists.updateListMemberTags(mailchimpListId, email, {
             tags: updatedBookTagsList.map(name => ({ name, status: "active" }))
         })
 
@@ -132,7 +125,7 @@ export const filterSubscribers = async (req, res) => {
             return res.status(400).json({ error: "Please provide a book name" });
         }
         // get all Subscribers
-        const subscriberData = await mailchimp.lists.getListMembersInfo(process.env.MAILCHIMP_LIST_ID);
+        const subscriberData = await mailchimpClient.lists.getListMembersInfo(process.env.MAILCHIMP_LIST_ID);
 
         // Filter subscribers based on the target book
         const subscribers = subscriberData.members

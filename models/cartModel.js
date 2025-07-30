@@ -1,22 +1,10 @@
-import {Schema,model} from "mongoose";
+import mongoose from "mongoose";
 
-const cartSchema = new Schema({
-  email:{
-    type:"string",
-    required:[true,"Email is required"],
-    lowercase: true,
-    trim: true,
-    unique: true,
-    match: [
-        /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|.(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,
-        "Please fill valid email address",
-    ],
-  },
-  books:{
-    type:[String]
-  }
-})
+const cartSchema = new mongoose.Schema({
+  email: { type: String, required: true },
+  books: [{ name: String , time: { type: Date, default: Date.now } }],
+}, {
+  timestamps: true 
+});
 
-const Cart = model("Cart", cartSchema);
-
-export default Cart;
+export default mongoose.model("Cart", cartSchema);

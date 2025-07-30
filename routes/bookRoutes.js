@@ -7,6 +7,6 @@ router.get("/", getPing);
 router.get("/get-subscribers", getSubscribers);
 router.post("/add-subscriber", addSubscriber);
 router.patch("/update-books", updateBooks);
-router.post("/filter-subscribers", filterSubscribers)
+router.post("/filter-subscribers", filterSubscribers);
 
 export default router;
